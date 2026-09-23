@@ -449,26 +449,20 @@
         if (!exportData || exportData.length === 0) return showNotification('Không có dữ liệu để xuất!');
         const headers = COLUMNS.map(col => `"${isDetail && col.key === 'danSo' ? 'Dân số' : col.label}"`).join(',');
         const rows = exportData.map((row, index) => {
-          return COLUMNS.map(col => `"${(col.key === 'stt' ? (index + 1) : (row[col.key] || '')).toString().replace(/"/g, '""').replace(/(
-|
-|
-)/gm, " ")}"`).join(',');
+          return COLUMNS.map(col => `"${(col.key === 'stt' ? (index + 1) : (row[col.key] || '')).toString().replace(/"/g, '""').replace(/(\r\n|\n|\r)/gm, " ")}"`).join(',');
         });
-        const csvContent = [headers, ...rows].join('
-');
-        const blob = new Blob(["﻿" + csvContent], { type: 'text/csv;charset=utf-8;' });
+        const csvContent = [headers, ...rows].join('\n');
+        const blob = new Blob(["\uFEFF" + csvContent], { type: 'text/csv;charset=utf-8;' });
         const link = document.createElement('a');
         link.href = URL.createObjectURL(blob);
         link.download = `${sheetName}_${new Date().getTime()}.csv`;
         link.click();
       };
-
       const handleExportMergeExcel = () => {
         if (filteredMergeData.length === 0) return showNotification('Không có dữ liệu để xuất!');
         const headers = '"STT","Tỉnh cũ","Huyện/Thị xã","Xã/Phường MỚI","Các Xã/Phường CŨ","Căn cứ pháp lý"';
         const rows = filteredMergeData.map((row, index) => `"${index + 1}","${row.tinhCu || ''}","${row.huyen || ''}","${row.xaMoi || ''}","${Array.isArray(row.cacXaCu) ? row.cacXaCu.join('; ') : (row.cacXaCu||'') }","${row.canCu || ''}"`);
-        const csvContent = [headers, ...rows].join('
-');
+        const csvContent = [headers, ...rows].join('\n');
         const blob = new Blob(["﻿" + csvContent], { type: 'text/csv;charset=utf-8;' });
         const link = document.createElement('a');
         link.href = URL.createObjectURL(blob);
@@ -480,8 +474,7 @@
         if (filteredContactData.length === 0) return showNotification('Không có dữ liệu để xuất!');
         const headers = '"STT","Đơn vị","Họ và tên","Điện thoại","Chức danh","Email"';
         const rows = filteredContactData.map((row, index) => `"${index + 1}","${row.donVi || ''}","${row.hoTen || ''}","${row.dienThoai || ''}","${row.chucDanh || ''}","${row.email || ''}"`);
-        const csvContent = [headers, ...rows].join('
-');
+        const csvContent = [headers, ...rows].join('\n');
         const blob = new Blob(["﻿" + csvContent], { type: 'text/csv;charset=utf-8;' });
         const link = document.createElement('a');
         link.href = URL.createObjectURL(blob);
@@ -493,8 +486,7 @@
         if (filteredReviewData.length === 0) return showNotification('Không có dữ liệu để xuất!');
         const headers = '"STT","Tỉnh (Cũ)","Huyện/Thị xã (Cũ)","Nội dung định hướng phát triển","Đơn vị phụ trách","Trạng thái rà soát","Ghi chú","Đính kèm"';
         const rows = filteredReviewData.map((row, index) => `"${index + 1}","${row.tinhCu || ''}","${row.huyen || ''}","${(row.noiDung || '').replace(/"/g, '""')}","${row.coQuan || ''}","${row.trangThai || ''}","${(row.ghiChu || '').replace(/"/g, '""')}","${row.file || ''}"`);
-        const csvContent = [headers, ...rows].join('
-');
+        const csvContent = [headers, ...rows].join('\n');
         const blob = new Blob(["﻿" + csvContent], { type: 'text/csv;charset=utf-8;' });
         const link = document.createElement('a');
         link.href = URL.createObjectURL(blob);
