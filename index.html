@@ -391,26 +391,6 @@ function App() {
       const [cloudStatus, setCloudStatus] = useState(isCloudConnected ? 'connected' : 'local');
 
       // CLOUD SYNC HELPERS
-      const syncToGasCloud = (overrideData = {}) => {
-        const gasUrl = localStorage.getItem('gialai_cloud_url');
-        if (gasUrl) {
-          const payload = {
-            qhChung: overrideData.data || data,
-            qhChiTiet: overrideData.detailData || detailData,
-            qhSapNhap: overrideData.mergedData || mergedData,
-            qhLienHe: overrideData.contactData || contactData,
-            qhRaSoat: overrideData.reviewData || reviewData,
-            adminPassword: overrideData.adminPassword || adminPassword
-          };
-          fetch(gasUrl, {
-            method: 'POST',
-            mode: 'no-cors',
-            headers: { 'Content-Type': 'text/plain' },
-            body: JSON.stringify(payload)
-          }).catch(err => console.warn('Lỗi đồng bộ Google Sheets Cloud:', err));
-        }
-      };
-
       const saveToCloud = (collName, docId, record) => {
         if (db) {
           try {
@@ -421,7 +401,7 @@ function App() {
             console.warn('Lỗi lưu Firebase Cloud:', err);
           }
         }
-        syncToGasCloud();
+        syncToCloud();
       };
 
       const deleteFromCloud = (collName, docId) => {
@@ -434,7 +414,7 @@ function App() {
             console.warn('Lỗi xóa Firebase Cloud:', err);
           }
         }
-        syncToGasCloud();
+        syncToCloud();
       };
 
       // REALTIME FIREBASE FIRESTORE LISTENERS
@@ -682,7 +662,8 @@ function App() {
         }
         if (isManual) showNotification('Đang tải dữ liệu mới nhất từ Đám mây...');
 
-        fetch(cloudUrl)
+        const fetchUrl = cloudUrl + (cloudUrl.includes("?") ? "&" : "?") + "_t=" + Date.now();
+        fetch(fetchUrl, { cache: "no-store" })
           .then(res => res.json())
           .then(cloudData => {
             if (cloudData && typeof cloudData === 'object') {
@@ -1087,18 +1068,19 @@ function App() {
         newRecord.id = recordId;
 
         if (isDetail) {
-          setDetailData(prev => {
-            const exists = (prev||[]).some(r => r.id === recordId);
-            return exists ? prev.map(r => r.id === recordId ? newRecord : r) : [newRecord, ...prev];
-          });
+          const nextDetail = (detailData || []).some(r => r.id === recordId)
+            ? detailData.map(r => r.id === recordId ? newRecord : r)
+            : [newRecord, ...(detailData || [])];
+          setDetailData(nextDetail);
+          syncToCloud({ detailData: nextDetail });
         } else {
-          setData(prev => {
-            const exists = (prev||[]).some(r => r.id === recordId);
-            return exists ? prev.map(r => r.id === recordId ? newRecord : r) : [newRecord, ...prev];
-          });
+          const nextData = (data || []).some(r => r.id === recordId)
+            ? data.map(r => r.id === recordId ? newRecord : r)
+            : [newRecord, ...(data || [])];
+          setData(nextData);
+          syncToCloud({ data: nextData });
         }
         setIsModalOpen(false);
-        saveToCloud(targetColl, recordId, newRecord);
         showNotification('Đã lưu hồ sơ thành công!');
       };
 
@@ -1138,12 +1120,12 @@ function App() {
         const recordId = editingMergeRecord?.id ? editingMergeRecord.id : Date.now();
         newRecord.id = recordId;
 
-        setMergedData(prev => {
-          const exists = (prev||[]).some(r => r.id === recordId);
-          return exists ? prev.map(r => r.id === recordId ? newRecord : r) : [newRecord, ...prev];
-        });
+        const nextMerged = (mergedData || []).some(r => r.id === recordId)
+          ? mergedData.map(r => r.id === recordId ? newRecord : r)
+          : [newRecord, ...(mergedData || [])];
+        setMergedData(nextMerged);
+        syncToCloud({ mergedData: nextMerged });
         setIsMergeModalOpen(false);
-        saveToCloud('qh_sapnhap', recordId, newRecord);
         showNotification('Đã lưu sáp nhập!');
       };
 
@@ -1176,12 +1158,12 @@ function App() {
         const recordId = editingContactRecord?.id ? editingContactRecord.id : Date.now().toString();
         newRecord.id = recordId;
 
-        setContactData(prev => {
-          const exists = (prev||[]).some(r => r.id === recordId);
-          return exists ? prev.map(r => r.id === recordId ? newRecord : r) : [newRecord, ...prev];
-        });
+        const nextContact = (contactData || []).some(r => r.id === recordId)
+          ? contactData.map(r => r.id === recordId ? newRecord : r)
+          : [newRecord, ...(contactData || [])];
+        setContactData(nextContact);
+        syncToCloud({ contactData: nextContact });
         setIsContactModalOpen(false);
-        saveToCloud('qh_lienhe', recordId, newRecord);
         showNotification('Đã lưu danh bạ!');
       };
 
@@ -1214,12 +1196,12 @@ function App() {
         const recordId = editingReviewRecord?.id ? editingReviewRecord.id : Date.now().toString();
         newRecord.id = recordId;
 
-        setReviewData(prev => {
-          const exists = (prev||[]).some(r => r.id === recordId);
-          return exists ? prev.map(r => r.id === recordId ? newRecord : r) : [newRecord, ...prev];
-        });
+        const nextReview = (reviewData || []).some(r => r.id === recordId)
+          ? reviewData.map(r => r.id === recordId ? newRecord : r)
+          : [newRecord, ...(reviewData || [])];
+        setReviewData(nextReview);
+        syncToCloud({ reviewData: nextReview });
         setIsReviewModalOpen(false);
-        saveToCloud('qh_rasoat', recordId, newRecord);
         showNotification('Đã lưu rà soát!');
       };
 
