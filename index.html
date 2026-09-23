@@ -339,6 +339,8 @@
     let db = null;
     let auth = null;
     let isCloudConnected = false;
+    const savedGasUrl = localStorage.getItem('gialai_cloud_url') || '';
+    const isGasConnected = Boolean(savedGasUrl);
 
     try {
       const savedConfigStr = localStorage.getItem('gialai_firebase_config');
@@ -367,10 +369,30 @@
 function App() {
 
       const [showFbConfigModal, setShowFbConfigModal] = useState(false);
-      const [fbConfigInput, setFbConfigInput] = useState(() => localStorage.getItem('gialai_firebase_config') || '');
+      const [fbConfigInput, setFbConfigInput] = useState(() => localStorage.getItem('gialai_cloud_url') || localStorage.getItem('gialai_firebase_config') || '');
       const [cloudStatus, setCloudStatus] = useState(isCloudConnected ? 'connected' : 'local');
 
       // CLOUD SYNC HELPERS
+      const syncToGasCloud = (overrideData = {}) => {
+        const gasUrl = localStorage.getItem('gialai_cloud_url');
+        if (gasUrl) {
+          const payload = {
+            qhChung: overrideData.data || data,
+            qhChiTiet: overrideData.detailData || detailData,
+            qhSapNhap: overrideData.mergedData || mergedData,
+            qhLienHe: overrideData.contactData || contactData,
+            qhRaSoat: overrideData.reviewData || reviewData,
+            adminPassword: overrideData.adminPassword || adminPassword
+          };
+          fetch(gasUrl, {
+            method: 'POST',
+            mode: 'no-cors',
+            headers: { 'Content-Type': 'text/plain' },
+            body: JSON.stringify(payload)
+          }).catch(err => console.warn('Lỗi đồng bộ Google Sheets Cloud:', err));
+        }
+      };
+
       const saveToCloud = (collName, docId, record) => {
         if (db) {
           try {
@@ -381,6 +403,7 @@ function App() {
             console.warn('Lỗi lưu Firebase Cloud:', err);
           }
         }
+        syncToGasCloud();
       };
 
       const deleteFromCloud = (collName, docId) => {
@@ -393,6 +416,7 @@ function App() {
             console.warn('Lỗi xóa Firebase Cloud:', err);
           }
         }
+        syncToGasCloud();
       };
 
       // REALTIME FIREBASE FIRESTORE LISTENERS
@@ -464,25 +488,81 @@ function App() {
         };
       }, []);
 
+      useEffect(() => {
+        const gasUrl = localStorage.getItem('gialai_cloud_url');
+        if (gasUrl) {
+          fetch(gasUrl)
+            .then(res => res.json())
+            .then(cloudData => {
+              if (cloudData && typeof cloudData === 'object') {
+                if (Array.isArray(cloudData.qhChung) && cloudData.qhChung.length > 0) setData(cloudData.qhChung);
+                if (Array.isArray(cloudData.qhChiTiet) && cloudData.qhChiTiet.length > 0) setDetailData(cloudData.qhChiTiet);
+                if (Array.isArray(cloudData.qhSapNhap) && cloudData.qhSapNhap.length > 0) setMergedData(cloudData.qhSapNhap);
+                if (Array.isArray(cloudData.qhLienHe) && cloudData.qhLienHe.length > 0) setContactData(cloudData.qhLienHe);
+                if (Array.isArray(cloudData.qhRaSoat) && cloudData.qhRaSoat.length > 0) setReviewData(cloudData.qhRaSoat);
+                if (cloudData.adminPassword) {
+                  setAdminPassword(cloudData.adminPassword);
+                  localStorage.setItem('gialai_admin_pass', cloudData.adminPassword);
+                }
+                console.log('✅ Đã đồng bộ dữ liệu mới nhất từ Google Sheets / Drive Cloud');
+              }
+            })
+            .catch(err => console.warn('Lỗi kết nối Google Sheets / Drive Cloud:', err));
+        }
+      }, []);
+
       const handleSaveFirebaseConfig = (e) => {
         e.preventDefault();
-        try {
-          const parsed = JSON.parse(fbConfigInput);
-          if (!parsed.apiKey || !parsed.projectId) {
-            return showNotification('Lỗi: Firebase Config JSON thiếu apiKey hoặc projectId!');
+        const input = (fbConfigInput || '').trim();
+        if (!input) return showNotification('Vui lòng nhập URL Google Sheets Web App HOẶC mã Firebase JSON!');
+
+        if (input.startsWith('http://') || input.startsWith('https://') || input.includes('script.google.com')) {
+          localStorage.setItem('gialai_cloud_url', input);
+          localStorage.removeItem('gialai_firebase_config');
+          showNotification('Đã lưu URL kết nối Google Sheets / Drive! Đang kết nối & đồng bộ dữ liệu...');
+          
+          const fullPayload = {
+            qhChung: data,
+            qhChiTiet: detailData,
+            qhSapNhap: mergedData,
+            qhLienHe: contactData,
+            qhRaSoat: reviewData,
+            adminPassword: adminPassword
+          };
+
+          fetch(input, {
+            method: 'POST',
+            mode: 'no-cors',
+            headers: { 'Content-Type': 'text/plain' },
+            body: JSON.stringify(fullPayload)
+          }).then(() => {
+            showNotification('✅ Kết nối thành công với Google Sheets / Drive Cloud!');
+            setTimeout(() => window.location.reload(), 1200);
+          }).catch(err => {
+            showNotification('✅ Đã lưu URL Google Sheets Cloud! Tải lại trang...');
+            setTimeout(() => window.location.reload(), 1200);
+          });
+        } else {
+          try {
+            const parsed = JSON.parse(input);
+            if (!parsed.apiKey || !parsed.projectId) {
+              return showNotification('Lỗi: Mã Firebase Config thiếu apiKey hoặc projectId!');
+            }
+            localStorage.setItem('gialai_firebase_config', JSON.stringify(parsed));
+            localStorage.removeItem('gialai_cloud_url');
+            showNotification('Đã lưu Cấu hình Firebase! Đang kết nối Đám mây...');
+            setTimeout(() => window.location.reload(), 1200);
+          } catch(err) {
+            showNotification('Lỗi: Cấu hình không hợp lệ! Hãy dán URL Google Apps Script (https://...) HOẶC mã Firebase JSON.');
           }
-          localStorage.setItem('gialai_firebase_config', JSON.stringify(parsed));
-          showNotification('Đã lưu Cấu hình Firebase! Đang kết nối Đám mây...');
-          setTimeout(() => window.location.reload(), 1200);
-        } catch(err) {
-          showNotification('Lỗi: Định dạng Firebase Config JSON không hợp lệ!');
         }
       };
 
       const handleClearFirebaseConfig = () => {
-        openConfirm('Hủy kết nối Firebase', 'Bạn có muốn gỡ cấu hình Firebase Cloud và quay về chế độ bộ nhớ cục bộ không?', () => {
+        openConfirm('Hủy kết nối Đám mây', 'Bạn có muốn gỡ cấu hình đồng bộ Đám mây (Google Sheets / Firebase) không?', () => {
           localStorage.removeItem('gialai_firebase_config');
-          showNotification('Đã gỡ cấu hình Firebase! Tải lại trang...');
+          localStorage.removeItem('gialai_cloud_url');
+          showNotification('Đã gỡ cấu hình Đám mây! Tải lại trang...');
           setTimeout(() => window.location.reload(), 1000);
         });
       };
@@ -1466,23 +1546,23 @@ function App() {
             <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 z-[99999]"><div className="bg-white rounded-xl shadow-2xl w-full max-w-lg overflow-hidden animate-in fade-in zoom-in"><div className="bg-indigo-700 p-4 flex justify-between items-center text-white"><h3 className="font-bold flex items-center gap-2"><Database className="w-5 h-5"/> Quản lý Dữ liệu Đám mây</h3><button onClick={() => setShowDbModal(false)} className="hover:bg-indigo-600 p-1 rounded-full"><X className="w-5 h-5"/></button></div><div className="p-6 flex flex-col gap-4">
               <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-4 mb-3">
         <h4 className="font-bold text-emerald-900 text-sm mb-1 flex items-center gap-2">
-          {isCloudConnected ? '🟢 Trạng thái: Đã kết nối Firebase Cloud' : '🟡 Trạng thái: Bộ nhớ Trình duyệt Cục bộ (Offline/Chưa cấu hình Cloud)'}
+          {isGasConnected ? '🟢 Trạng thái: Đã kết nối Google Sheets / Drive Cloud' : isCloudConnected ? '🟢 Trạng thái: Đã kết nối Firebase Cloud' : '🟡 Trạng thái: Bộ nhớ Trình duyệt Cục bộ (Offline/Chưa cấu hình Cloud)'}
         </h4>
         <p className="text-xs text-slate-600">
-          {isCloudConnected 
+          {(isGasConnected || isCloudConnected)
             ? 'Mọi thay đổi (thêm/sửa/xóa/mật khẩu) được tự động lưu & đồng bộ real-time giữa tất cả các máy tính và trình duyệt!' 
-            : 'Để đồng bộ dữ liệu tự động giữa các máy tính khác nhau, hãy dán Cấu hình Firebase Web Config của bạn bên dưới.'}
+            : 'Để đồng bộ dữ liệu tự động giữa các máy tính khác nhau, hãy dán URL Google Apps Script Web App (https://...) HOẶC mã Firebase Config JSON của bạn bên dưới.'}
         </p>
       </div>
 
       <div className="bg-slate-50 border border-slate-200 rounded-lg p-4 mb-2">
         <div className="flex justify-between items-center mb-2">
-          <h4 className="font-bold text-slate-800 text-sm flex items-center gap-2">☁️ Cấu hình Kết nối Firebase Cloud</h4>
-          {isCloudConnected && <button type="button" onClick={handleClearFirebaseConfig} className="text-xs text-red-600 hover:underline font-bold">Hủy kết nối</button>}
+          <h4 className="font-bold text-slate-800 text-sm flex items-center gap-2">☁️ Cấu hình Đồng bộ Đám mây (Google Sheets / Drive hoặc Firebase)</h4>
+          {(isGasConnected || isCloudConnected) && <button type="button" onClick={handleClearFirebaseConfig} className="text-xs text-red-600 hover:underline font-bold">Hủy kết nối</button>}
         </div>
         <form onSubmit={handleSaveFirebaseConfig} className="flex flex-col gap-2">
-          <textarea rows="3" value={fbConfigInput} onChange={e => setFbConfigInput(e.target.value)} placeholder='Dán mã Firebase Web Config JSON (Ví dụ: {"apiKey":"...","projectId":"..."})' className="w-full p-2 border rounded text-xs font-mono bg-white" />
-          <button type="submit" className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 rounded text-xs transition-colors shadow-sm">Lưu Cấu hình Firebase & Kích hoạt Đồng bộ Đa thiết bị</button>
+          <textarea rows="3" value={fbConfigInput} onChange={e => setFbConfigInput(e.target.value)} placeholder='Dán URL Google Apps Script Web App (Ví dụ: https://script.google.com/macros/s/.../exec) HOẶC mã Firebase Config JSON' className="w-full p-2 border rounded text-xs font-mono bg-white" />
+          <button type="submit" className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 rounded text-xs transition-colors shadow-sm">Lưu Cấu hình & Kích hoạt Đồng bộ Đa thiết bị</button>
         </form>
       </div>
 
