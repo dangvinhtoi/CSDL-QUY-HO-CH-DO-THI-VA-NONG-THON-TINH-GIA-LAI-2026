@@ -52,6 +52,11 @@
       }
     }
   </style>
+
+  <!-- Firebase JS SDK (Compat mode cho trình duyệt) -->
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
 </head>
 <body>
   <div id="root">
@@ -326,7 +331,162 @@
     // =========================================================================
     // MAIN APP COMPONENT
     // =========================================================================
-    function App() {
+    
+    // =========================================================================
+    // 🟢 CẤU HÌNH & KHỞI TẠO FIREBASE CLOUD SYNC (ĐỒNG BỘ REAL-TIME ĐA THIẾT BỊ)
+    // =========================================================================
+    let firebaseApp = null;
+    let db = null;
+    let auth = null;
+    let isCloudConnected = false;
+
+    try {
+      const savedConfigStr = localStorage.getItem('gialai_firebase_config');
+      let fbConfig = null;
+
+      if (savedConfigStr) {
+        try { fbConfig = JSON.parse(savedConfigStr); } catch(e) {}
+      } else if (typeof __firebase_config !== 'undefined' && __firebase_config) {
+        try { fbConfig = typeof __firebase_config === 'string' ? JSON.parse(__firebase_config) : __firebase_config; } catch(e) {}
+      }
+
+      if (fbConfig && fbConfig.apiKey && fbConfig.projectId) {
+        if (!firebase.apps.length) {
+          firebaseApp = firebase.initializeApp(fbConfig);
+        } else {
+          firebaseApp = firebase.app();
+        }
+        db = firebase.firestore();
+        auth = firebase.auth();
+        isCloudConnected = true;
+      }
+    } catch (err) {
+      console.warn("Chưa kết nối Firebase Cloud:", err);
+    }
+
+function App() {
+
+      const [showFbConfigModal, setShowFbConfigModal] = useState(false);
+      const [fbConfigInput, setFbConfigInput] = useState(() => localStorage.getItem('gialai_firebase_config') || '');
+      const [cloudStatus, setCloudStatus] = useState(isCloudConnected ? 'connected' : 'local');
+
+      // CLOUD SYNC HELPERS
+      const saveToCloud = (collName, docId, record) => {
+        if (db) {
+          try {
+            const appIdKey = typeof __app_id !== 'undefined' ? __app_id : 'gialai-qh-default';
+            db.collection('artifacts').doc(appIdKey).collection(collName).doc(docId.toString()).set(record)
+              .catch(err => console.warn('Lỗi lưu Firebase Cloud:', err));
+          } catch (err) {
+            console.warn('Lỗi lưu Firebase Cloud:', err);
+          }
+        }
+      };
+
+      const deleteFromCloud = (collName, docId) => {
+        if (db) {
+          try {
+            const appIdKey = typeof __app_id !== 'undefined' ? __app_id : 'gialai-qh-default';
+            db.collection('artifacts').doc(appIdKey).collection(collName).doc(docId.toString()).delete()
+              .catch(err => console.warn('Lỗi xóa Firebase Cloud:', err));
+          } catch (err) {
+            console.warn('Lỗi xóa Firebase Cloud:', err);
+          }
+        }
+      };
+
+      // REALTIME FIREBASE FIRESTORE LISTENERS
+      useEffect(() => {
+        if (!db || !auth) return;
+
+        auth.signInAnonymously().catch(err => console.warn('Lỗi ẩn danh Firebase:', err));
+
+        const appIdKey = typeof __app_id !== 'undefined' ? __app_id : 'gialai-qh-default';
+
+        const unsubConfig = db.collection('artifacts').doc(appIdKey).collection('config').doc('admin')
+          .onSnapshot(docSnap => {
+            if (docSnap.exists && docSnap.data().password) {
+              setAdminPassword(docSnap.data().password);
+              localStorage.setItem('gialai_admin_pass', docSnap.data().password);
+            }
+          }, err => console.warn('Lỗi snapshot password:', err));
+
+        const unsubChung = db.collection('artifacts').doc(appIdKey).collection('qh_chung')
+          .onSnapshot(snapshot => {
+            if (!snapshot.empty) {
+              const items = [];
+              snapshot.forEach(docSnap => items.push({ ...docSnap.data(), id: docSnap.data().id || parseInt(docSnap.id) }));
+              items.sort((a,b) => (a.id || 0) - (b.id || 0));
+              setData(items);
+            }
+          }, err => console.warn('Lỗi snapshot qh_chung:', err));
+
+        const unsubChiTiet = db.collection('artifacts').doc(appIdKey).collection('qh_chitiet')
+          .onSnapshot(snapshot => {
+            if (!snapshot.empty) {
+              const items = [];
+              snapshot.forEach(docSnap => items.push({ ...docSnap.data(), id: docSnap.data().id || parseInt(docSnap.id) }));
+              items.sort((a,b) => (a.id || 0) - (b.id || 0));
+              setDetailData(items);
+            }
+          }, err => console.warn('Lỗi snapshot qh_chitiet:', err));
+
+        const unsubSapNhap = db.collection('artifacts').doc(appIdKey).collection('qh_sapnhap')
+          .onSnapshot(snapshot => {
+            if (!snapshot.empty) {
+              const items = [];
+              snapshot.forEach(docSnap => items.push({ ...docSnap.data(), id: docSnap.data().id || parseInt(docSnap.id) }));
+              items.sort((a,b) => (a.id || 0) - (b.id || 0));
+              setMergedData(items);
+            }
+          }, err => console.warn('Lỗi snapshot qh_sapnhap:', err));
+
+        const unsubContact = db.collection('artifacts').doc(appIdKey).collection('qh_lienhe')
+          .onSnapshot(snapshot => {
+            if (!snapshot.empty) {
+              const items = [];
+              snapshot.forEach(docSnap => items.push({ ...docSnap.data(), id: docSnap.id }));
+              setContactData(items);
+            }
+          }, err => console.warn('Lỗi snapshot qh_lienhe:', err));
+
+        const unsubReview = db.collection('artifacts').doc(appIdKey).collection('qh_rasoat')
+          .onSnapshot(snapshot => {
+            if (!snapshot.empty) {
+              const items = [];
+              snapshot.forEach(docSnap => items.push({ ...docSnap.data(), id: docSnap.id }));
+              setReviewData(items);
+            }
+          }, err => console.warn('Lỗi snapshot qh_rasoat:', err));
+
+        return () => {
+          unsubConfig(); unsubChung(); unsubChiTiet(); unsubSapNhap(); unsubContact(); unsubReview();
+        };
+      }, []);
+
+      const handleSaveFirebaseConfig = (e) => {
+        e.preventDefault();
+        try {
+          const parsed = JSON.parse(fbConfigInput);
+          if (!parsed.apiKey || !parsed.projectId) {
+            return showNotification('Lỗi: Firebase Config JSON thiếu apiKey hoặc projectId!');
+          }
+          localStorage.setItem('gialai_firebase_config', JSON.stringify(parsed));
+          showNotification('Đã lưu Cấu hình Firebase! Đang kết nối Đám mây...');
+          setTimeout(() => window.location.reload(), 1200);
+        } catch(err) {
+          showNotification('Lỗi: Định dạng Firebase Config JSON không hợp lệ!');
+        }
+      };
+
+      const handleClearFirebaseConfig = () => {
+        openConfirm('Hủy kết nối Firebase', 'Bạn có muốn gỡ cấu hình Firebase Cloud và quay về chế độ bộ nhớ cục bộ không?', () => {
+          localStorage.removeItem('gialai_firebase_config');
+          showNotification('Đã gỡ cấu hình Firebase! Tải lại trang...');
+          setTimeout(() => window.location.reload(), 1000);
+        });
+      };
+
       const [isLoggedIn, setIsLoggedIn] = useState(false);
       const [showLoginModal, setShowLoginModal] = useState(false);
       const [showDbModal, setShowDbModal] = useState(false);
@@ -739,6 +899,7 @@
           });
         }
         setIsModalOpen(false);
+        saveToCloud(targetColl, recordId, newRecord);
         showNotification('Đã lưu hồ sơ thành công!');
       };
 
@@ -746,6 +907,8 @@
         if (!isLoggedIn) return;
         openConfirm('Xác nhận xóa', 'Bạn có chắc chắn muốn xóa hồ sơ này?', () => {
           closeConfirm();
+          const targetColl = isDetail ? 'qh_chitiet' : 'qh_chung';
+          deleteFromCloud(targetColl, id);
           if (isDetail) setDetailData(prev => (prev||[]).filter(r => r.id !== id));
           else setData(prev => (prev||[]).filter(r => r.id !== id));
           showNotification('Đã xóa hồ sơ.');
@@ -776,6 +939,7 @@
           return exists ? prev.map(r => r.id === recordId ? newRecord : r) : [newRecord, ...prev];
         });
         setIsMergeModalOpen(false);
+        saveToCloud('qh_sapnhap', recordId, newRecord);
         showNotification('Đã lưu sáp nhập!');
       };
 
@@ -783,6 +947,7 @@
         if (!isLoggedIn) return;
         openConfirm('Xác nhận xóa', 'Bạn có chắc chắn muốn xóa dữ liệu sáp nhập này?', () => {
           closeConfirm();
+          deleteFromCloud('qh_sapnhap', id);
           setMergedData(prev => (prev||[]).filter(r => r.id !== id));
           showNotification('Đã xóa sáp nhập.');
         });
@@ -811,6 +976,7 @@
           return exists ? prev.map(r => r.id === recordId ? newRecord : r) : [newRecord, ...prev];
         });
         setIsContactModalOpen(false);
+        saveToCloud('qh_lienhe', recordId, newRecord);
         showNotification('Đã lưu danh bạ!');
       };
 
@@ -818,6 +984,7 @@
         if (!isLoggedIn) return;
         openConfirm('Xác nhận xóa', 'Bạn có chắc chắn muốn xóa liên hệ này?', () => {
           closeConfirm();
+          deleteFromCloud('qh_lienhe', id);
           setContactData(prev => (prev||[]).filter(r => r.id !== id));
           showNotification('Đã xóa liên hệ.');
         });
@@ -846,6 +1013,7 @@
           return exists ? prev.map(r => r.id === recordId ? newRecord : r) : [newRecord, ...prev];
         });
         setIsReviewModalOpen(false);
+        saveToCloud('qh_rasoat', recordId, newRecord);
         showNotification('Đã lưu rà soát!');
       };
 
@@ -853,6 +1021,7 @@
         if (!isLoggedIn) return;
         openConfirm('Xác nhận xóa', 'Xóa dữ liệu rà soát này?', () => {
           closeConfirm();
+          deleteFromCloud('qh_rasoat', id);
           setReviewData(prev => (prev||[]).filter(r => r.id !== id));
           showNotification('Đã xóa rà soát.');
         });
@@ -1295,7 +1464,29 @@
 
           {showDbModal && (
             <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 z-[99999]"><div className="bg-white rounded-xl shadow-2xl w-full max-w-lg overflow-hidden animate-in fade-in zoom-in"><div className="bg-indigo-700 p-4 flex justify-between items-center text-white"><h3 className="font-bold flex items-center gap-2"><Database className="w-5 h-5"/> Quản lý Dữ liệu Đám mây</h3><button onClick={() => setShowDbModal(false)} className="hover:bg-indigo-600 p-1 rounded-full"><X className="w-5 h-5"/></button></div><div className="p-6 flex flex-col gap-4">
-              <div className="bg-indigo-50 border border-indigo-100 rounded-lg p-4 mb-2">
+              <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-4 mb-3">
+        <h4 className="font-bold text-emerald-900 text-sm mb-1 flex items-center gap-2">
+          {isCloudConnected ? '🟢 Trạng thái: Đã kết nối Firebase Cloud' : '🟡 Trạng thái: Bộ nhớ Trình duyệt Cục bộ (Offline/Chưa cấu hình Cloud)'}
+        </h4>
+        <p className="text-xs text-slate-600">
+          {isCloudConnected 
+            ? 'Mọi thay đổi (thêm/sửa/xóa/mật khẩu) được tự động lưu & đồng bộ real-time giữa tất cả các máy tính và trình duyệt!' 
+            : 'Để đồng bộ dữ liệu tự động giữa các máy tính khác nhau, hãy dán Cấu hình Firebase Web Config của bạn bên dưới.'}
+        </p>
+      </div>
+
+      <div className="bg-slate-50 border border-slate-200 rounded-lg p-4 mb-2">
+        <div className="flex justify-between items-center mb-2">
+          <h4 className="font-bold text-slate-800 text-sm flex items-center gap-2">☁️ Cấu hình Kết nối Firebase Cloud</h4>
+          {isCloudConnected && <button type="button" onClick={handleClearFirebaseConfig} className="text-xs text-red-600 hover:underline font-bold">Hủy kết nối</button>}
+        </div>
+        <form onSubmit={handleSaveFirebaseConfig} className="flex flex-col gap-2">
+          <textarea rows="3" value={fbConfigInput} onChange={e => setFbConfigInput(e.target.value)} placeholder='Dán mã Firebase Web Config JSON (Ví dụ: {"apiKey":"...","projectId":"..."})' className="w-full p-2 border rounded text-xs font-mono bg-white" />
+          <button type="submit" className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 rounded text-xs transition-colors shadow-sm">Lưu Cấu hình Firebase & Kích hoạt Đồng bộ Đa thiết bị</button>
+        </form>
+      </div>
+
+      <div className="bg-indigo-50 border border-indigo-100 rounded-lg p-4 mb-2">
                 <h4 className="font-bold text-indigo-900 text-sm mb-2 flex items-center gap-2">Mã phiên bản Server hiện tại:</h4>
                 <code className="text-xs font-mono bg-white px-2 py-1 rounded border border-indigo-200 text-slate-600 break-all select-all block">{appId}</code>
                 <p className="text-xs text-slate-500 mt-2 italic">Mỗi đường link chia sẻ sẽ có một mã Server khác nhau để bảo mật. Hãy dùng chức năng Backup/Restore để chuyển dữ liệu qua lại giữa các đường link.</p>
