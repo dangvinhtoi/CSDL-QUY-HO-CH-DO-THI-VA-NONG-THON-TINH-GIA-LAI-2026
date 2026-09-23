@@ -6,7 +6,10 @@
   <title>CSDL QUY HOẠCH GIA LAI - Hệ thống Quản lý & Tra cứu Sáp nhập ĐVHC</title>
   <!-- 🟢 CẤU HÌNH ĐỒNG BỘ ĐÁM MÂY DÙNG CHUNG (DÁN LINK GOOGLE APPS SCRIPT VÀO ĐÂY) -->
   <script>
-    window.DEFAULT_CLOUD_URL = "https://script.google.com/macros/s/AKfycbwn-Qwx1UGEyGuucdKT0XgsZysjASVZhN0yEXl-bGkwDPT0fyItuT7TGuKijrxdIjpO/exec";
+    // 🟢 CẤU HÌNH ĐỒNG BỘ ĐÁM MÂY DÙNG CHUNG (DÁN LINK GOOGLE APPS SCRIPT VÀO ĐÂY)
+    // Để BẤT KỲ MÁY TÍNH NÀO mở link web cũng tự động kết nối và tải dữ liệu mới nhất,
+    // hãy dán đường link Google Apps Script Web App (https://script.google.com/macros/s/.../exec) vào giữa 2 dấu nháy đôi bên dưới:
+    window.DEFAULT_CLOUD_URL = "https://script.google.com/macros/s/AKfycbzf7Qi2cMbI42CG8tfs_OmoUMxvfdhFHyn_HlBz2jk2Lr1wMVlhXGrp-WuxZHoBxTXW/exec";
   </script>
 
   
@@ -624,6 +627,89 @@ function App() {
         return local ? JSON.parse(local) : INITIAL_REVIEWS_DEFAULT;
       });
 
+      
+      // =========================================================================
+      // 🟢 CLOUD SYNC ENGINE (HỖ TRỢ GOOGLE APPS SCRIPT / DRIVE & FIREBASE)
+      // =========================================================================
+      const getCloudUrl = () => {
+        return window.DEFAULT_CLOUD_URL || localStorage.getItem('gialai_cloud_url') || '';
+      };
+
+      const syncToCloud = (overrides = {}) => {
+        const cloudUrl = getCloudUrl();
+        
+        // Payload chứa toàn bộ trạng thái dữ liệu hiện tại (có thể ghi đè biến vừa thay đổi)
+        const payload = {
+          qhChung: overrides.data || data,
+          qhChiTiet: overrides.detailData || detailData,
+          qhSapNhap: overrides.mergedData || mergedData,
+          qhLienHe: overrides.contactData || contactData,
+          qhRaSoat: overrides.reviewData || reviewData,
+          adminPassword: overrides.adminPassword || adminPassword
+        };
+
+        // 1. Đồng bộ Google Sheets / Drive Cloud
+        if (cloudUrl && !cloudUrl.includes('DÁN_LINK_GOOGLE')) {
+          fetch(cloudUrl, {
+            method: 'POST',
+            mode: 'no-cors',
+            headers: { 'Content-Type': 'text/plain' },
+            body: JSON.stringify(payload)
+          }).catch(err => console.warn('Lỗi đồng bộ Google Sheets Cloud:', err));
+        }
+
+        // 2. Đồng bộ Firebase Cloud (nếu có cấu hình)
+        if (db) {
+          try {
+            const appIdKey = typeof __app_id !== 'undefined' ? __app_id : 'gialai-qh-default';
+            db.collection('artifacts').doc(appIdKey).collection('config').doc('data').set(payload)
+              .catch(err => console.warn('Lỗi lưu Firebase Cloud:', err));
+          } catch(e) {}
+        }
+      };
+
+      const fetchFromCloud = (isManual = false) => {
+        const cloudUrl = getCloudUrl();
+        if (!cloudUrl || cloudUrl.includes('DÁN_LINK_GOOGLE')) {
+          if (isManual) showNotification('Chưa cấu hình URL Đám mây! Nhập link trong mục Quản lý CSDL.');
+          return;
+        }
+        if (isManual) showNotification('Đang tải dữ liệu mới nhất từ Đám mây...');
+
+        fetch(cloudUrl)
+          .then(res => res.json())
+          .then(cloudData => {
+            if (cloudData && typeof cloudData === 'object') {
+              let updated = false;
+              if (Array.isArray(cloudData.qhChung) && cloudData.qhChung.length > 0) { setData(cloudData.qhChung); updated = true; }
+              if (Array.isArray(cloudData.qhChiTiet) && cloudData.qhChiTiet.length > 0) { setDetailData(cloudData.qhChiTiet); updated = true; }
+              if (Array.isArray(cloudData.qhSapNhap) && cloudData.qhSapNhap.length > 0) { setMergedData(cloudData.qhSapNhap); updated = true; }
+              if (Array.isArray(cloudData.qhLienHe) && cloudData.qhLienHe.length > 0) { setContactData(cloudData.qhLienHe); updated = true; }
+              if (Array.isArray(cloudData.qhRaSoat) && cloudData.qhRaSoat.length > 0) { setReviewData(cloudData.qhRaSoat); updated = true; }
+              if (cloudData.adminPassword) {
+                setAdminPassword(cloudData.adminPassword);
+                localStorage.setItem('gialai_admin_pass', cloudData.adminPassword);
+                updated = true;
+              }
+              if (isManual || updated) showNotification('✅ Đã đồng bộ dữ liệu mới nhất từ Đám mây!');
+            }
+          })
+          .catch(err => {
+            console.warn('Lỗi kết nối Đám mây Google:', err);
+            if (isManual) showNotification('Không thể kết nối đến Đám mây Google!');
+          });
+      };
+
+      // Tự động tải dữ liệu từ Đám mây khi mở trang & tự động làm mới mỗi 30 giây
+      useEffect(() => {
+        fetchFromCloud(false);
+        const timer = setInterval(() => {
+          fetchFromCloud(false);
+        }, 30000);
+        return () => clearInterval(timer);
+      }, []);
+
+
       // TỰ ĐỘNG LƯU LOCALSTORAGE KHI CÓ THAY ĐỔI
       useEffect(() => { localStorage.setItem('gialai_qh_chung', JSON.stringify(data)); }, [data]);
       useEffect(() => { localStorage.setItem('gialai_qh_chitiet', JSON.stringify(detailData)); }, [detailData]);
@@ -771,12 +857,22 @@ function App() {
             
             openConfirm('Xác nhận phục hồi', 'Hệ thống sẽ nạp lại dữ liệu từ file của bạn. Xác nhận?', () => {
               closeConfirm(); setShowDbModal(false);
-              if (jsonData.qhChung) setData(jsonData.qhChung);
-              if (jsonData.qhChiTiet) setDetailData(jsonData.qhChiTiet);
-              if (jsonData.qhSapNhap) setMergedData(jsonData.qhSapNhap);
-              if (jsonData.qhLienHe) setContactData(jsonData.qhLienHe);
-              if (jsonData.qhRaSoat) setReviewData(jsonData.qhRaSoat);
-              showNotification('Phục hồi dữ liệu thành công!');
+              const p1 = jsonData.qhChung || data;
+              const p2 = jsonData.qhChiTiet || detailData;
+              const p3 = jsonData.qhSapNhap || mergedData;
+              const p4 = jsonData.qhLienHe || contactData;
+              const p5 = jsonData.qhRaSoat || reviewData;
+              const pass = jsonData.adminPassword || adminPassword;
+
+              if (jsonData.qhChung) setData(p1);
+              if (jsonData.qhChiTiet) setDetailData(p2);
+              if (jsonData.qhSapNhap) setMergedData(p3);
+              if (jsonData.qhLienHe) setContactData(p4);
+              if (jsonData.qhRaSoat) setReviewData(p5);
+              if (jsonData.adminPassword) { setAdminPassword(pass); localStorage.setItem('gialai_admin_pass', pass); }
+
+              syncToCloud({ data: p1, detailData: p2, mergedData: p3, contactData: p4, reviewData: p5, adminPassword: pass });
+              showNotification('Phục hồi dữ liệu thành công & đã đồng bộ Đám mây!');
             });
           } catch (error) { showNotification(`Lỗi định dạng file: ${error.message}`); }
         };
@@ -787,14 +883,20 @@ function App() {
       const handleResetToDefaultDB = () => {
         openConfirm('Khôi phục CSDL Gốc', 'Hệ thống sẽ XÓA SẠCH dữ liệu hiện tại và nạp lại cấu hình gốc. Có tiếp tục?', () => {
           closeConfirm(); setShowDbModal(false);
-          setData(generate135Records());
-          setDetailData(generateDetailRecords());
-          setMergedData(INITIAL_MERGED_DATA);
-          setContactData(INITIAL_CONTACTS_DEFAULT);
-          setReviewData(INITIAL_REVIEWS_DEFAULT);
+          const g1 = generate135Records();
+          const g2 = generateDetailRecords();
+          const g3 = INITIAL_MERGED_DATA;
+          const g4 = INITIAL_CONTACTS_DEFAULT;
+          const g5 = INITIAL_REVIEWS_DEFAULT;
+          setData(g1);
+          setDetailData(g2);
+          setMergedData(g3);
+          setContactData(g4);
+          setReviewData(g5);
           setAdminPassword('123456');
           localStorage.setItem('gialai_admin_pass', '123456');
-          showNotification('Khôi phục CSDL gốc thành công!');
+          syncToCloud({ data: g1, detailData: g2, mergedData: g3, contactData: g4, reviewData: g5, adminPassword: '123456' });
+          showNotification('Đã khôi phục CSDL gốc & đồng bộ Đám mây!');
         });
       };
 
@@ -918,10 +1020,11 @@ function App() {
 
         setAdminPassword(changePassForm.newPass);
         localStorage.setItem('gialai_admin_pass', changePassForm.newPass);
+        syncToCloud({ adminPassword: changePassForm.newPass });
         setShowChangePassModal(false);
         setChangePassForm({ current: '', newPass: '', confirm: '' });
         setChangePassError('');
-        showNotification('Đổi mật khẩu thành công!');
+        showNotification('Đã đổi mật khẩu thành công & đồng bộ Đám mây!');
       };
 
       const handleSendOTP = (e) => {
@@ -948,12 +1051,13 @@ function App() {
         if (newRecoveryPass.length < 6) return setRecoveryError('Mật khẩu mới phải từ 6 ký tự!');
         setAdminPassword(newRecoveryPass);
         localStorage.setItem('gialai_admin_pass', newRecoveryPass);
+        syncToCloud({ adminPassword: newRecoveryPass });
         setShowForgotPassModal(false);
         setForgotPassStep(1);
         setRecoveryPhone('');
         setRecoveryOTP('');
         setNewRecoveryPass('');
-        showNotification('Đã đặt lại mật khẩu thành công! Vui lòng đăng nhập lại.');
+        showNotification('Khôi phục mật khẩu thành công & đồng bộ Đám mây!');
       };
 
       const openModal = (record = null, isDetail = false) => {
@@ -996,10 +1100,15 @@ function App() {
         if (!isLoggedIn) return;
         openConfirm('Xác nhận xóa', 'Bạn có chắc chắn muốn xóa hồ sơ này?', () => {
           closeConfirm();
-          const targetColl = isDetail ? 'qh_chitiet' : 'qh_chung';
-          deleteFromCloud(targetColl, id);
-          if (isDetail) setDetailData(prev => (prev||[]).filter(r => r.id !== id));
-          else setData(prev => (prev||[]).filter(r => r.id !== id));
+          if (isDetail) {
+            const nextDetail = (detailData || []).filter(r => r.id !== id);
+            setDetailData(nextDetail);
+            syncToCloud({ detailData: nextDetail });
+          } else {
+            const nextData = (data || []).filter(r => r.id !== id);
+            setData(nextData);
+            syncToCloud({ data: nextData });
+          }
           showNotification('Đã xóa hồ sơ.');
         });
       };
@@ -1036,8 +1145,9 @@ function App() {
         if (!isLoggedIn) return;
         openConfirm('Xác nhận xóa', 'Bạn có chắc chắn muốn xóa dữ liệu sáp nhập này?', () => {
           closeConfirm();
-          deleteFromCloud('qh_sapnhap', id);
-          setMergedData(prev => (prev||[]).filter(r => r.id !== id));
+          const nextMerged = (mergedData || []).filter(r => r.id !== id);
+          setMergedData(nextMerged);
+          syncToCloud({ mergedData: nextMerged });
           showNotification('Đã xóa sáp nhập.');
         });
       };
@@ -1073,8 +1183,9 @@ function App() {
         if (!isLoggedIn) return;
         openConfirm('Xác nhận xóa', 'Bạn có chắc chắn muốn xóa liên hệ này?', () => {
           closeConfirm();
-          deleteFromCloud('qh_lienhe', id);
-          setContactData(prev => (prev||[]).filter(r => r.id !== id));
+          const nextContact = (contactData || []).filter(r => r.id !== id);
+          setContactData(nextContact);
+          syncToCloud({ contactData: nextContact });
           showNotification('Đã xóa liên hệ.');
         });
       };
@@ -1110,8 +1221,9 @@ function App() {
         if (!isLoggedIn) return;
         openConfirm('Xác nhận xóa', 'Xóa dữ liệu rà soát này?', () => {
           closeConfirm();
-          deleteFromCloud('qh_rasoat', id);
-          setReviewData(prev => (prev||[]).filter(r => r.id !== id));
+          const nextReview = (reviewData || []).filter(r => r.id !== id);
+          setReviewData(nextReview);
+          syncToCloud({ reviewData: nextReview });
           showNotification('Đã xóa rà soát.');
         });
       };
