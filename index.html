@@ -4,6 +4,11 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>CSDL QUY HOẠCH GIA LAI - Hệ thống Quản lý & Tra cứu Sáp nhập ĐVHC</title>
+  <!-- 🟢 CẤU HÌNH ĐỒNG BỘ ĐÁM MÂY DÙNG CHUNG (DÁN LINK GOOGLE APPS SCRIPT VÀO ĐÂY) -->
+  <script>
+    window.DEFAULT_CLOUD_URL = "https://script.google.com/macros/s/AKfycbwn-Qwx1UGEyGuucdKT0XgsZysjASVZhN0yEXl-bGkwDPT0fyItuT7TGuKijrxdIjpO/exec";
+  </script>
+
   
   <!-- Tailwind CSS CDN -->
   <script src="https://cdn.tailwindcss.com"></script>
@@ -335,11 +340,15 @@
     // =========================================================================
     // 🟢 CẤU HÌNH & KHỞI TẠO FIREBASE CLOUD SYNC (ĐỒNG BỘ REAL-TIME ĐA THIẾT BỊ)
     // =========================================================================
+    // 🟢 CẤU HÌNH ĐÁM MÂY DÙNG CHUNG CHO TẤT CẢ MÁY TÍNH & TRÌNH DUYỆT (GIAI PHÁP TỰ ĐỘNG)
+    // Dán link Google Apps Script Web App của bạn vào giữa 2 dấu nháy bên dưới để BẤT KỲ MÁY TÍNH NÀO mở link web cũng tự kết nối CSDL:
+    window.DEFAULT_CLOUD_URL = window.DEFAULT_CLOUD_URL || "";
+
     let firebaseApp = null;
     let db = null;
     let auth = null;
     let isCloudConnected = false;
-    const savedGasUrl = localStorage.getItem('gialai_cloud_url') || '';
+    const savedGasUrl = window.DEFAULT_CLOUD_URL || localStorage.getItem('gialai_cloud_url') || '';
     const isGasConnected = Boolean(savedGasUrl);
 
     try {
