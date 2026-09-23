@@ -9,7 +9,7 @@
     // 🟢 CẤU HÌNH ĐỒNG BỘ ĐÁM MÂY DÙNG CHUNG (DÁN LINK GOOGLE APPS SCRIPT VÀO ĐÂY)
     // Để BẤT KỲ MÁY TÍNH NÀO mở link web cũng tự động kết nối và tải dữ liệu mới nhất,
     // hãy dán đường link Google Apps Script Web App (https://script.google.com/macros/s/.../exec) vào giữa 2 dấu nháy đôi bên dưới:
-    window.DEFAULT_CLOUD_URL = "https://script.google.com/macros/s/AKfycbzY0sotUDckWkHx7Gb7UsduTTXGQt8op64-T4Qw7LnwDaPRXEyIa2_zr4luvLE9LIv2/exec";
+    window.DEFAULT_CLOUD_URL = "https://script.google.com/macros/s/AKfycbz0eSSJcJukltzk4AfEuoOU-4RRj3UCDULJBBT944a3HPgqQCGWqRvnexjIfatdbPYIrw/exec";
   </script>
 
   
@@ -347,11 +347,17 @@
     // Dán link Google Apps Script Web App của bạn vào giữa 2 dấu nháy bên dưới để BẤT KỲ MÁY TÍNH NÀO mở link web cũng tự kết nối CSDL:
     window.DEFAULT_CLOUD_URL = window.DEFAULT_CLOUD_URL || "";
 
+    const getValidCloudUrl = () => {
+      const url = window.DEFAULT_CLOUD_URL || localStorage.getItem('gialai_cloud_url') || '';
+      if (!url || url.includes('DÁN_LINK_GOOGLE') || url.includes('DÁN_LINK_') || url.trim() === '') return '';
+      return url.trim();
+    };
+
     let firebaseApp = null;
     let db = null;
     let auth = null;
     let isCloudConnected = false;
-    const savedGasUrl = window.DEFAULT_CLOUD_URL || localStorage.getItem('gialai_cloud_url') || '';
+    const savedGasUrl = getValidCloudUrl();
     const isGasConnected = Boolean(savedGasUrl);
 
     try {
@@ -381,7 +387,7 @@
 function App() {
 
       const [showFbConfigModal, setShowFbConfigModal] = useState(false);
-      const [fbConfigInput, setFbConfigInput] = useState(() => localStorage.getItem('gialai_cloud_url') || localStorage.getItem('gialai_firebase_config') || '');
+      const [fbConfigInput, setFbConfigInput] = useState(() => getValidCloudUrl() || localStorage.getItem('gialai_cloud_url') || localStorage.getItem('gialai_firebase_config') || '');
       const [cloudStatus, setCloudStatus] = useState(isCloudConnected ? 'connected' : 'local');
 
       // CLOUD SYNC HELPERS
@@ -632,7 +638,7 @@ function App() {
       // 🟢 CLOUD SYNC ENGINE (HỖ TRỢ GOOGLE APPS SCRIPT / DRIVE & FIREBASE)
       // =========================================================================
       const getCloudUrl = () => {
-        return window.DEFAULT_CLOUD_URL || localStorage.getItem('gialai_cloud_url') || '';
+        return getValidCloudUrl();
       };
 
       const syncToCloud = (overrides = {}) => {
@@ -1284,7 +1290,8 @@ function App() {
                   <p className="text-sm font-bold text-white">Phòng Quy hoạch kiến trúc và Phát triển đô thị - Sở Xây dựng Gia Lai</p>
                   <p className="text-xs text-emerald-300 mt-1 flex items-center md:justify-end gap-1 font-medium"><Clock className="h-3.5 w-3.5" /> Giai đoạn cập nhật: Từ 01/7/2025</p>
                 </div>
-                <div className="border-l border-blue-600 pl-5 flex items-center">
+                <div className="border-l border-blue-600 pl-5 flex items-center gap-2">
+                  <button onClick={() => fetchFromCloud(true)} className="text-xs bg-emerald-500 hover:bg-emerald-600 text-white font-bold px-3 py-2 rounded-lg transition-colors flex items-center gap-1.5 shadow-sm shrink-0" title="Bấm để làm mới & nạp dữ liệu mới nhất từ Google Drive"><RefreshCcw className="w-3.5 h-3.5"/> Làm mới Đám mây</button>
                   {isLoggedIn ? (
                     <div className="flex flex-col items-center gap-1.5">
                       <span className="text-sm font-bold text-white flex items-center gap-1.5"><User className="w-4 h-4 text-emerald-400"/> Admin</span>
